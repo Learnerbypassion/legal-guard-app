@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, StyleSheet, Linking, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { useRouter } from 'expo-router';
 import { api, updateProfileApi } from '../../src/services/api';
+import { EXTERNAL_LINKS } from '../../src/constants/links';
 
 const styles = StyleSheet.create({
   container: {
@@ -317,6 +318,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 4,
   },
+  linksContainer: {
+    marginBottom: 16,
+  },
+  linksTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 12,
+  },
+  linkButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  linkButtonIcon: {
+    fontSize: 18,
+    marginRight: 12,
+    color: '#2563eb',
+  },
+  linkButtonText: {
+    color: '#2563eb',
+    fontWeight: '600',
+    fontSize: 14,
+    flex: 1,
+  },
+  linkButtonArrow: {
+    fontSize: 16,
+    color: '#2563eb',
+    marginLeft: 8,
+  },
   logoutButton: {
     backgroundColor: '#fef2f2',
     borderWidth: 1,
@@ -347,6 +389,13 @@ export default function ProfileScreen() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await refreshUser();
+    setRefreshing(false);
+  }, [refreshUser]);
 
   // Email OTP
   const [emailVerifying, setEmailVerifying] = useState(false);
@@ -455,7 +504,10 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
       {/* Profile Header */}
       <View style={styles.header}>
         <View style={styles.avatar}>
@@ -637,6 +689,37 @@ export default function ProfileScreen() {
           ].map((item, i) => (
             <Text key={i} style={styles.securityItem}><Ionicons name="checkmark-circle-outline" size={14} color="#0c4a6e" /> {item}</Text>
           ))}
+        </View>
+
+        {/* External Links */}
+        <View style={styles.linksContainer}>
+          <Text style={styles.linksTitle}>Quick Links</Text>
+          <TouchableOpacity
+            onPress={() => Linking.openURL(EXTERNAL_LINKS.WEBSITE)}
+            style={styles.linkButton}
+          >
+            <Ionicons name="globe-outline" style={styles.linkButtonIcon} />
+            <Text style={styles.linkButtonText}>Visit Website</Text>
+            <Ionicons name="chevron-forward" style={styles.linkButtonArrow} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => Linking.openURL(EXTERNAL_LINKS.APP_REPO)}
+            style={styles.linkButton}
+          >
+            <Ionicons name="logo-github" style={styles.linkButtonIcon} />
+            <Text style={styles.linkButtonText}>App Repository</Text>
+            <Ionicons name="chevron-forward" style={styles.linkButtonArrow} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => Linking.openURL(EXTERNAL_LINKS.EXTENSION_REPO)}
+            style={styles.linkButton}
+          >
+            <Ionicons name="extension-puzzle-outline" style={styles.linkButtonIcon} />
+            <Text style={styles.linkButtonText}>Extension Repository</Text>
+            <Ionicons name="chevron-forward" style={styles.linkButtonArrow} />
+          </TouchableOpacity>
         </View>
 
         {/* Logout */}

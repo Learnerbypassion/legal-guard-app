@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   StyleSheet,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
@@ -42,9 +43,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   appTitle: {
-    fontSize: 28,
+    fontSize: 13,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: '#4F6BFF',
   },
   appSubtitle: {
     color: '#64748b',
@@ -190,6 +191,9 @@ export default function LoginScreen() {
 
   const normalizePhone = (raw: string) => {
     let cleaned = raw.replace(/[\s\-()]/g, '');
+    if (/^\d{10}$/.test(cleaned)) {
+      return `+91${cleaned}`;
+    }
     let countryCode = '';
     let numberPart = '';
 
@@ -233,7 +237,7 @@ export default function LoginScreen() {
       {/* Header */}
       <View style={styles.headerContainer}>
         <View style={styles.logoBox}>
-          <Text style={styles.logoText}>LG</Text>
+          <Image source={require('../../assets/images/custom-logo.jpg')} style={{ width: 64, height: 64, borderRadius: 16 }} resizeMode="cover" />
         </View>
         <Text style={styles.appTitle}>Legal-Guardian</Text>
         <Text style={styles.appSubtitle}>AI-Powered Document Analysis</Text>

@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
 // For physical device testing on Wi-Fi, use your local machine's IP
-const BASE_URL = 'http://192.168.0.105:3000/api';
+const BASE_URL = 'https://legal-guard-app.onrender.com/api';
 
 export const api = axios.create({
   baseURL: BASE_URL,

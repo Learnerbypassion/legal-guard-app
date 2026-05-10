@@ -96,6 +96,9 @@ export default function ForgotPasswordScreen() {
 
   const normalizePhone = (p: string) => {
     let cleaned = p.replace(/[\s\-()]/g, '');
+    if (/^\d{10}$/.test(cleaned)) {
+      return `+91${cleaned}`;
+    }
     let countryCode = '';
     let numberPart = '';
     

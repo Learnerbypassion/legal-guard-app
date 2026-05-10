@@ -346,6 +346,8 @@ const loginUser = async (phone, password) => {
         role: user.role,
         userType: user.userType,
         preferredLanguage: user.preferredLanguage,
+        isPhoneVerified: user.isPhoneVerified,
+        isEmailVerified: user.isEmailVerified,
       },
     };
   } catch (error) {

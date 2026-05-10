@@ -63,6 +63,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
         api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        
+        // Fetch latest user data in background
+        api.get('/auth/me').then(({ data }) => {
+          const userData = data.data || data.user;
+          if (data.success && userData) {
+            setUser(userData);
+            SecureStore.setItemAsync('user', JSON.stringify(userData));
+          }
+        }).catch(err => console.error('Failed to auto-refresh user', err));
       }
     } catch (e) {
       console.error('Failed to load auth data', e);
@@ -209,9 +218,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = async () => {
     try {
       const { data } = await api.get('/auth/me');
-      if (data.success && data.user) {
-        setUser(data.user);
-        await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+      const userData = data.data || data.user;
+      if (data.success && userData) {
+        setUser(userData);
+        await SecureStore.setItemAsync('user', JSON.stringify(userData));
       }
     } catch (e) {
       console.error('Failed to refresh user', e);

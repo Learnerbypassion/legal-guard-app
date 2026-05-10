@@ -177,7 +177,8 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -197,6 +198,7 @@ export default function ChatScreen() {
         style={styles.messagesContainer}
         ref={scrollViewRef}
         onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        keyboardShouldPersistTaps="handled"
       >
         {messages.map((msg, index) => (
           <View
