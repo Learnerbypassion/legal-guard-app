@@ -684,7 +684,6 @@ export default function ProfileScreen() {
           {[
             'Your password is securely hashed',
             'Your phone number is verified via SMS',
-            'All data is encrypted in transit',
             'Your account is protected by JWT authentication',
           ].map((item, i) => (
             <Text key={i} style={styles.securityItem}><Ionicons name="checkmark-circle-outline" size={14} color="#0c4a6e" /> {item}</Text>

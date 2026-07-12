@@ -279,7 +279,7 @@ export default function DashboardScreen() {
             <Ionicons name="document-text-outline" size={20} color="#2563eb" />
           </View>
           <Text style={styles.featureCardTitle}>Upload Documents</Text>
-          <Text style={styles.featureCardSubtitle}>PDF, TXT, Word</Text>
+          <Text style={styles.featureCardSubtitle}>PDF, JPEG, PNG</Text>
         </View>
         <View style={styles.featureCard}>
           <View style={[styles.featureIconContainer, styles.indigoIcon]}>
@@ -336,7 +336,7 @@ export default function DashboardScreen() {
       <View style={styles.infoBox}>
         <Text style={styles.infoParagraph}>How It Works</Text>
         {[
-          'Upload your document (PDF, TXT, or Word)',
+          'Upload your document (PDF, TXT, JPEG, PNG)',
           'Our AI analyzes the content',
           'Get insights, summary, and risk assessment',
           'Chat with AI to ask follow-up questions',

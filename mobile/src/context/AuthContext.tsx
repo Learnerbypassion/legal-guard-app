@@ -71,7 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(userData);
             SecureStore.setItemAsync('user', JSON.stringify(userData));
           }
-        }).catch(err => console.error('Failed to auto-refresh user', err));
+        }).catch(err => {
+          console.log('Failed to auto-refresh user:', err.message);
+          if (err.response?.status === 401) {
+            setToken(null);
+            setUser(null);
+            delete api.defaults.headers.common['Authorization'];
+          }
+        });
       }
     } catch (e) {
       console.error('Failed to load auth data', e);
@@ -223,8 +230,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(userData);
         await SecureStore.setItemAsync('user', JSON.stringify(userData));
       }
-    } catch (e) {
-      console.error('Failed to refresh user', e);
+    } catch (e: any) {
+      console.log('Failed to refresh user:', e.message);
+      if (e.response?.status === 401) {
+        setToken(null);
+        setUser(null);
+        delete api.defaults.headers.common['Authorization'];
+      }
     }
   };
 
