@@ -11,6 +11,10 @@ const {
   verifyResetOTP,
   resetPassword,
   resendResetOTP,
+  registerWithEmail,
+  verifyEmailSignupOTP,
+  googleLogin,
+  linkGoogle,
 } = require("../services/auth.service");
 const { validateAndNormalizePhone } = require("../utils/phoneValidator");
 
@@ -186,38 +190,48 @@ const resendOTPHandler = async (req, res) => {
  */
 const login = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, email, identifier, password } = req.body;
+    const loginId = identifier || email || phone;
 
     // Validation
-    if (!phone || !password) {
+    if (!loginId || !password) {
       return res.status(400).json({
         success: false,
-        error: "Phone number and password are required",
+        error: "Email/Phone and password are required",
       });
     }
 
-    // Validate and normalize phone number
-    let normalizedPhone;
-    try {
-      normalizedPhone = validateAndNormalizePhone(phone);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        error: error.message || "Invalid phone number format",
-      });
+    // Validate and normalize identifier
+    let normalizedId = loginId;
+    if (!loginId.includes("@")) {
+      try {
+        normalizedId = validateAndNormalizePhone(loginId);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          error: error.message || "Invalid phone number format",
+        });
+      }
+    } else {
+      normalizedId = loginId.toLowerCase().trim();
     }
 
-    const result = await loginUser(normalizedPhone, password);
-
-
+    const result = await loginUser(normalizedId, password);
 
     res.status(200).json({
       success: true,
       data: result,
       message: "Logged in successfully!",
     });
-  } catch (error) {
+  } catch (error) { 
     console.error("❌ Login error:", error.message);
+    if (error.message === "Email not verified") {
+      return res.status(403).json({
+        success: false,
+        error: "Email not verified",
+        userId: error.userId,
+      });
+    }
     res.status(401).json({
       success: false,
       error: error.message || "Login failed",
@@ -532,6 +546,90 @@ const verifyEmailHandler = async (req, res) => {
   }
 };
 
+/**
+ * Register with Email and Password
+ * POST /api/auth/register-email
+ */
+const registerEmail = async (req, res) => {
+  try {
+    const { email, password, name, role } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ success: false, error: "Email, password, and name are required" });
+    }
+    const result = await registerWithEmail(email, password, name, role);
+    res.status(200).json({ success: true, data: result, message: result.message });
+  } catch (error) {
+    console.error("❌ Register email error:", error.message);
+    if (error.message.includes("already registered")) {
+       return res.status(409).json({ success: false, error: error.message });
+    }
+    res.status(400).json({ success: false, error: error.message || "Registration failed" });
+  }
+};
+
+/**
+ * Verify Email Signup OTP
+ * POST /api/auth/verify-email-signup
+ */
+const verifyEmailSignup = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+    if (!userId || !otp) {
+      return res.status(400).json({ success: false, error: "User ID and OTP are required" });
+    }
+    const result = await verifyEmailSignupOTP(userId, otp);
+    res.status(200).json({ success: true, data: result, message: "Email verified successfully!" });
+  } catch (error) {
+    console.error("❌ Verify email signup error:", error.message);
+    res.status(400).json({ success: false, error: error.message || "Verification failed" });
+  }
+};
+
+/**
+ * Google Auth Login
+ * POST /api/auth/google-login
+ */
+const googleLoginHandler = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ success: false, error: "Google ID Token is required" });
+    }
+    const result = await googleLogin(idToken);
+    res.status(200).json({ success: true, data: result, message: "Logged in with Google successfully!" });
+  } catch (error) {
+    console.error("❌ Google login error:", error.message);
+    if (error.code === "ACCOUNT_LINKING_REQUIRED") {
+      return res.status(409).json({
+        success: false, 
+        code: "ACCOUNT_LINKING_REQUIRED",
+        error: error.message,
+        userId: error.userId,
+        email: error.email,
+      });
+    }
+    res.status(400).json({ success: false, error: error.message || "Google authentication failed" });
+  }
+};
+
+/**
+ * Link Google Auth to existing local account
+ * POST /api/auth/link-google
+ */
+const linkGoogleHandler = async (req, res) => {
+  try {
+    const { userId, password, idToken } = req.body;
+    if (!userId || !password || !idToken) {
+      return res.status(400).json({ success: false, error: "User ID, password, and Google ID Token are required" });
+    }
+    const result = await linkGoogle(userId, password, idToken);
+    res.status(200).json({ success: true, data: result, message: "Account linked successfully!" });
+  } catch (error) {
+    console.error("❌ Link Google error:", error.message);
+    res.status(400).json({ success: false, error: error.message || "Failed to link Google account" });
+  }
+};
+
 module.exports = {
   register,
   verifyOTP,
@@ -547,4 +645,8 @@ module.exports = {
   updateProfile,
   sendEmailVerificationHandler,
   verifyEmailHandler,
+  registerEmail,
+  verifyEmailSignup,
+  googleLoginHandler,
+  linkGoogleHandler,
 };

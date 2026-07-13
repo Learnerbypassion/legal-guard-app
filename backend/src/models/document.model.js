@@ -10,6 +10,13 @@ const highlightedClauseSchema = new mongoose.Schema({
 const documentSchema = new mongoose.Schema(
   {
     filename: { type: String, required: true },
+    contractText: { type: String, default: null },
+    pdfBuffer: { type: Buffer, default: null },
+    // Image upload support
+    imageUrl: { type: String, default: null },
+    imageKitFileId: { type: String, default: null },
+    imageKitThumbnailUrl: { type: String, default: null },
+    fileType: { type: String, enum: ["pdf", "image"], default: "pdf" },
     contractType: { type: String, default: "Unknown" },
     parties: [String],
     keyDates: [{ label: String, date: String }],
@@ -41,9 +48,6 @@ const documentSchema = new mongoose.Schema(
     language: { type: String, default: "English" },
     userType: { type: String, default: "general" },
     charCount: Number,
-    // Image upload fields
-    isImage: { type: Boolean, default: false },
-    imageUrl: { type: String, default: null },
     // Optional: link to user
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },

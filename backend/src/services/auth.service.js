@@ -314,24 +314,51 @@ const resendOTP = async (userId) => {
 /**
  * Login User
  */
-const loginUser = async (phone, password) => {
+/**
+ * Login User by Email or Phone
+ */
+const loginUser = async (identifier, password) => {
   try {
-    const user = await User.findOne({ phone });
-
-    if (!user) {
-      throw new Error("User not found");
+    let user;
+    if (identifier.includes("@")) {
+      user = await User.findOne({ email: identifier.toLowerCase() });
+    } else {
+      user = await User.findOne({ phone: identifier });
     }
 
-    if (!user.isPhoneVerified) {
-      throw new Error("Phone not verified. Please complete signup.");
+    if (!user) {
+      throw new Error("Invalid email/phone or password");
+    }
+
+    // Check verification status
+    if (identifier.includes("@")) {
+      if (!user.isEmailVerified) {
+        // Return custom error so front-end knows to redirect to verification
+        const err = new Error("Email not verified");
+        err.userId = user._id;
+        throw err;
+      }
+    } else {
+      if (!user.isPhoneVerified) {
+        throw new Error("Phone number not verified. Please complete signup.");
+      }
+    }
+
+    // Check if they are trying to log in locally but registered via social only
+    if (user.authProviders && user.authProviders.includes("google") && !user.authProviders.includes("local")) {
+      throw new Error("Please log in using your Google account.");
     }
 
     // Compare password
     const isPasswordValid = await comparePassword(password, user.password);
 
     if (!isPasswordValid) {
-      throw new Error("Invalid password");
+      throw new Error("Invalid email/phone or password");
     }
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
 
     // Generate JWT token
     const token = generateToken(user._id);
@@ -348,6 +375,280 @@ const loginUser = async (phone, password) => {
         preferredLanguage: user.preferredLanguage,
         isPhoneVerified: user.isPhoneVerified,
         isEmailVerified: user.isEmailVerified,
+        profilePicture: user.profilePicture,
+      },
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Register User with Email and Password
+ */
+const registerWithEmail = async (email, password, name, role = "user") => {
+  try {
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+
+    if (existingUser) {
+      if (existingUser.isEmailVerified) {
+        throw new Error("Email already registered. Please log in.");
+      }
+      
+      // If user exists but email is not verified, allow re-registration
+      const hashedPassword = await hashPassword(password);
+      existingUser.password = hashedPassword;
+      existingUser.name = name;
+      existingUser.role = role;
+      
+      const emailOtp = generateOTP();
+      existingUser.emailOtp = emailOtp;
+      existingUser.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+      
+      await existingUser.save();
+      
+      const { sendOtpEmail } = require('./email.service');
+      await sendOtpEmail(email, name, emailOtp);
+      
+      return {
+        userId: existingUser._id,
+        email: existingUser.email,
+        message: "New verification OTP sent to your email",
+      };
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const emailOtp = generateOTP();
+
+    const user = new User({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      name,
+      role,
+      isEmailVerified: false,
+      isPhoneVerified: false,
+      emailOtp,
+      emailOtpExpires: new Date(Date.now() + 10 * 60 * 1000),
+      authProviders: ["local"],
+    });
+
+    await user.save();
+
+    const { sendOtpEmail } = require('./email.service');
+    await sendOtpEmail(email, name, emailOtp);
+
+    return {
+      userId: user._id,
+      email: user.email,
+      message: "Verification OTP sent to your email",
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Verify Email Signup OTP
+ */
+const verifyEmailSignupOTP = async (userId, otp) => {
+  try {
+    const user = await User.findById(userId);
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    if (new Date() > user.emailOtpExpires) {
+      throw new Error("Email OTP has expired");
+    }
+
+    if (user.emailOtp !== otp) {
+      throw new Error("Invalid Email OTP");
+    }
+
+    user.isEmailVerified = true;
+    user.emailOtp = null;
+    user.emailOtpExpires = null;
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    return {
+      token,
+      user: {
+        _id: user._id,
+        email: user.email,
+        phone: user.phone,
+        name: user.name,
+        role: user.role,
+        userType: user.userType,
+        preferredLanguage: user.preferredLanguage,
+        isPhoneVerified: user.isPhoneVerified,
+        isEmailVerified: user.isEmailVerified,
+      },
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Verify Google ID Token & Perform login/registration
+ */
+const googleLogin = async (idToken) => {
+  try {
+    const { OAuth2Client } = require("google-auth-library");
+    const { GOOGLE_ALLOWED_CLIENT_IDS } = require("../config/env");
+
+    const client = new OAuth2Client();
+    
+    // Parse client IDs array
+    const allowedClientIds = GOOGLE_ALLOWED_CLIENT_IDS.split(",").map(id => id.trim()).filter(Boolean);
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: allowedClientIds,
+    });
+    
+    const payload = ticket.getPayload();
+    const { sub, email, name, picture, email_verified } = payload;
+
+    // Check if user exists by googleSub
+    let user = await User.findOne({ googleSub: sub });
+
+    if (user) {
+      user.lastLoginAt = new Date();
+      await user.save();
+
+      const token = generateToken(user._id);
+      return {
+        token,
+        user: {
+          _id: user._id,
+          email: user.email,
+          phone: user.phone,
+          name: user.name,
+          role: user.role,
+          userType: user.userType,
+          preferredLanguage: user.preferredLanguage,
+          isPhoneVerified: user.isPhoneVerified,
+          isEmailVerified: user.isEmailVerified,
+          profilePicture: user.profilePicture,
+        },
+      };
+    }
+
+    // Check if email already registered locally
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      // Prompt user to link account (secure linking)
+      const err = new Error("Account linking required");
+      err.code = "ACCOUNT_LINKING_REQUIRED";
+      err.userId = existingUser._id;
+      err.email = existingUser.email;
+      throw err;
+    }
+
+    // Create new Google Auth user
+    user = new User({
+      email: email.toLowerCase(),
+      name,
+      googleSub: sub,
+      authProviders: ["google"],
+      profilePicture: picture || null,
+      isEmailVerified: email_verified || false,
+      isPhoneVerified: false,
+      lastLoginAt: new Date(),
+    });
+
+    await user.save();
+
+    const token = generateToken(user._id);
+    return {
+      token,
+      user: {
+        _id: user._id,
+        email: user.email,
+        phone: user.phone,
+        name: user.name,
+        role: user.role,
+        userType: user.userType,
+        preferredLanguage: user.preferredLanguage,
+        isPhoneVerified: user.isPhoneVerified,
+        isEmailVerified: user.isEmailVerified,
+        profilePicture: user.profilePicture,
+      },
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+/**
+ * Link Google Provider to an Existing Local Account
+ */
+const linkGoogle = async (userId, password, idToken) => {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify Password
+    const isPasswordValid = await comparePassword(password, user.password);
+    if (!isPasswordValid) {
+      throw new Error("Invalid password");
+    }
+
+    // Verify Google Token
+    const { OAuth2Client } = require("google-auth-library");
+    const { GOOGLE_ALLOWED_CLIENT_IDS } = require("../config/env");
+
+    const client = new OAuth2Client();
+    const allowedClientIds = GOOGLE_ALLOWED_CLIENT_IDS.split(",").map(id => id.trim()).filter(Boolean);
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: allowedClientIds,
+    });
+    
+    const payload = ticket.getPayload();
+    const { sub, email } = payload;
+
+    if (user.email.toLowerCase() !== email.toLowerCase()) {
+      throw new Error("Google account email does not match your Legal Guardian email");
+    }
+
+    // Check if sub is already linked to another account
+    const duplicateUser = await User.findOne({ googleSub: sub });
+    if (duplicateUser && duplicateUser._id.toString() !== user._id.toString()) {
+      throw new Error("This Google account is already linked to another user");
+    }
+
+    // Link account
+    user.googleSub = sub;
+    if (!user.authProviders.includes("google")) {
+      user.authProviders.push("google");
+    }
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    return {
+      token,
+      user: {
+        _id: user._id,
+        email: user.email,
+        phone: user.phone,
+        name: user.name,
+        role: user.role,
+        userType: user.userType,
+        preferredLanguage: user.preferredLanguage,
+        isPhoneVerified: user.isPhoneVerified,
+        isEmailVerified: user.isEmailVerified,
+        profilePicture: user.profilePicture,
       },
     };
   } catch (error) {
@@ -597,4 +898,8 @@ module.exports = {
   verifyResetOTP,
   resetPassword,
   resendResetOTP,
+  registerWithEmail,
+  verifyEmailSignupOTP,
+  googleLogin,
+  linkGoogle,
 };

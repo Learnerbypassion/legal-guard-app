@@ -1,6 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { api, loginUser, registerUser, verifyOTPApi, setPasswordApi, resendOTPApi, sendEmailVerificationApi, verifyEmailApi } from '../services/api';
+import {
+  api,
+  loginUser,
+  registerUser,
+  verifyOTPApi,
+  setPasswordApi,
+  resendOTPApi,
+  sendEmailVerificationApi,
+  verifyEmailApi,
+  registerEmailApi,
+  verifyEmailSignupApi,
+  googleLoginApi,
+  linkGoogleApi,
+} from '../services/api';
 
 type User = {
   _id: string;
@@ -27,9 +40,13 @@ type AuthContextType = {
   isLoading: boolean;
   error: string | null;
   setError: (err: string | null) => void;
-  login: (phone: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (email: string, phone: string, name: string, role: string) => Promise<{ userId: string }>;
+  registerEmail: (email: string, password: string, name: string, role: string) => Promise<{ userId: string }>;
+  verifyEmailSignup: (userId: string, otp: string) => Promise<void>;
+  googleLogin: (idToken: string) => Promise<void>;
+  linkGoogle: (userId: string, password: string, idToken: string) => Promise<void>;
   verifyOTP: (userId: string, phoneOtp: string, emailOtp: string | null) => Promise<void>;
   setPassword: (userId: string, password: string) => Promise<void>;
   resendOTP: (userId: string) => Promise<void>;
@@ -64,6 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(JSON.parse(storedUser));
         api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
         
+        // Auto connect socket
+        const { socketService } = require('../services/socket.service');
+        socketService.connect().catch((err: any) => console.log('Socket auto-connect failed:', err.message));
+
         // Fetch latest user data in background
         api.get('/auth/me').then(({ data }) => {
           const userData = data.data || data.user;
@@ -77,6 +98,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setToken(null);
             setUser(null);
             delete api.defaults.headers.common['Authorization'];
+            const { socketService: socket } = require('../services/socket.service');
+            socket.disconnect();
           }
         });
       }
@@ -89,7 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const saveAuth = async (newToken: string, newUser: User) => {
-    // SecureStore only accepts strings — guard against undefined/object tokens
     const tokenStr = typeof newToken === 'string' ? newToken : String(newToken ?? '');
     const userStr = JSON.stringify(newUser);
 
@@ -100,13 +122,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(newToken);
     setUser(newUser);
     api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+
+    // Connect socket on successful authentication
+    const { socketService } = require('../services/socket.service');
+    socketService.connect().catch((err: any) => console.log('Socket connect failed:', err.message));
   };
 
-  const login = async (phone: string, password: string) => {
+  const login = async (identifier: string, password: string) => {
     try {
       setError(null);
-      const data = await loginUser(phone, password);
-      // Backend response shape: { success, data: { token, user }, message }
+      const data = await loginUser(identifier, password);
       if (data.success) {
         const token = data.data?.token ?? data.token;
         const user = data.data?.user ?? data.user;
@@ -123,6 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      const { socketService } = require('../services/socket.service');
+      socketService.disconnect();
+
       await SecureStore.deleteItemAsync('token');
       await SecureStore.deleteItemAsync('user');
       setToken(null);
@@ -137,7 +165,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const data = await registerUser(email, phone, name, role);
-      // Backend response shape: { success, data: { userId }, message }
       if (data.success) {
         const userId = data.data?.userId ?? data.userId;
         return { userId };
@@ -146,6 +173,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       const msg = err.response?.data?.error || err.message || 'Registration failed';
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const registerEmail = async (email: string, password: string, name: string, role: string) => {
+    try {
+      setError(null);
+      const data = await registerEmailApi(email, password, name, role);
+      if (data.success) {
+        return { userId: data.data?.userId ?? data.userId };
+      } else {
+        throw new Error(data.message || 'Registration failed');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Registration failed';
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const verifyEmailSignup = async (userId: string, otp: string) => {
+    try {
+      setError(null);
+      const data = await verifyEmailSignupApi(userId, otp);
+      if (data.success) {
+        const token = data.data?.token ?? data.token;
+        const user = data.data?.user ?? data.user;
+        await saveAuth(token, user);
+      } else {
+        throw new Error(data.message || 'Verification failed');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Verification failed';
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const googleLogin = async (idToken: string) => {
+    try {
+      setError(null);
+      const data = await googleLoginApi(idToken);
+      if (data.success) {
+        const token = data.data?.token ?? data.token;
+        const user = data.data?.user ?? data.user;
+        await saveAuth(token, user);
+      } else {
+        throw new Error(data.message || 'Google login failed');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Google login failed';
+      setError(msg);
+      throw err;
+    }
+  };
+
+  const linkGoogle = async (userId: string, password: string, idToken: string) => {
+    try {
+      setError(null);
+      const data = await linkGoogleApi(userId, password, idToken);
+      if (data.success) {
+        const token = data.data?.token ?? data.token;
+        const user = data.data?.user ?? data.user;
+        await saveAuth(token, user);
+      } else {
+        throw new Error(data.message || 'Failed to link Google account');
+      }
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.message || 'Failed to link Google account';
       setError(msg);
       throw err;
     }
@@ -243,7 +340,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, token, isLoading, error, setError,
-      login, logout, register, verifyOTP, setPassword,
+      login, logout, register, registerEmail, verifyEmailSignup,
+      googleLogin, linkGoogle, verifyOTP, setPassword,
       resendOTP, sendEmailOTP, verifyEmailOTP, refreshUser,
     }}>
       {children}

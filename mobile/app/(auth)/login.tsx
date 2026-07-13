@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,35 @@ import {
   Alert,
   StyleSheet,
   Image,
+  Modal,
+  NativeModules,
+  TurboModuleRegistry,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, Link } from 'expo-router';
+import { useRouter, Link, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
+import { Platform } from 'react-native';
+
+let GoogleSignin: any = {
+  configure: () => {},
+  hasPlayServices: async () => false,
+  signIn: async () => {
+    throw new Error('Google Sign-In is not supported in Expo Go. Please use a development build (npx expo run:android).');
+  },
+};
+
+const hasGoogleSignin = Platform.OS !== 'web' && (
+  !!TurboModuleRegistry.get('RNGoogleSignin') || 
+  !!NativeModules.RNGoogleSignin
+);
+
+if (hasGoogleSignin) {
+  try {
+    GoogleSignin = require('@react-native-google-signin/google-signin').GoogleSignin;
+  } catch (e) {
+    console.warn('Failed to load @react-native-google-signin/google-signin:', e);
+  }
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -179,15 +204,72 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 24,
   },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#ffffff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  googleButtonText: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginBottom: 8,
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: '#64748b',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
 });
 
 export default function LoginScreen() {
-  const [phone, setPhone] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { login, error, setError } = useAuth();
+  const { login, googleLogin, linkGoogle, error, setError } = useAuth();
   const router = useRouter();
+  const params = useLocalSearchParams();
+
+  // Linking State
+  const [linkingInfo, setLinkingInfo] = useState<{ userId: string; email: string; idToken: string } | null>(null);
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkingLoading, setLinkingLoading] = useState(false);
+
+  useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: '710925414754-5sdov85elu40d1fe41cuv500ddgibe9u.apps.googleusercontent.com',
+    });
+  }, []);
 
   const normalizePhone = (raw: string) => {
     let cleaned = raw.replace(/[\s\-()]/g, '');
@@ -213,18 +295,101 @@ export default function LoginScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!phone || !password) {
+    if (!identifier || !password) {
       setError('Please fill in all fields');
       return;
     }
     setLoading(true);
+
+    let normalizedId = identifier.trim();
+    if (!normalizedId.includes('@')) {
+      normalizedId = normalizePhone(normalizedId);
+    }
+
     try {
-      await login(normalizePhone(phone), password);
-      router.replace('/(tabs)');
-    } catch {
-      // error handled by context
+      await login(normalizedId, password);
+      
+      const redirectTo = params.redirectTo as string;
+      if (redirectTo) {
+        router.replace(redirectTo as any);
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (err: any) {
+      console.log('Login error in screen:', err.response?.data?.error || err.message);
+      if (err.response?.data?.error === 'Email not verified' || err.response?.status === 403) {
+        const userId = err.response.data.userId;
+        router.push({
+          pathname: '/verify-email-signup',
+          params: { userId, email: normalizedId },
+        });
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const idToken = response.data?.idToken;
+      
+      if (!idToken) {
+        throw new Error('Google ID Token was not returned');
+      }
+
+      try {
+        await googleLogin(idToken);
+        const redirectTo = params.redirectTo as string;
+        if (redirectTo) {
+          router.replace(redirectTo as any);
+        } else {
+          router.replace('/(tabs)');
+        }
+      } catch (err: any) {
+        if (err.response?.data?.code === 'ACCOUNT_LINKING_REQUIRED') {
+          setLinkingInfo({
+            userId: err.response.data.userId,
+            email: err.response.data.email,
+            idToken,
+          });
+        } else {
+          setError(err.response?.data?.error || err.message || 'Google authentication failed');
+        }
+      }
+    } catch (err: any) {
+      console.log('Google Sign-In cancel/error:', err);
+      if (err.code !== 'SIGN_IN_CANCELLED') {
+        setError(err.message || 'Google Sign-in failed');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLinkAccount = async () => {
+    if (!linkPassword) {
+      Alert.alert('Required', 'Please enter your password to link your Google account.');
+      return;
+    }
+    setLinkingLoading(true);
+    try {
+      await linkGoogle(linkingInfo!.userId, linkPassword, linkingInfo!.idToken);
+      setLinkingInfo(null);
+      setLinkPassword('');
+      const redirectTo = params.redirectTo as string;
+      if (redirectTo) {
+        router.replace(redirectTo as any);
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (err: any) {
+      Alert.alert('Linking Failed', err.response?.data?.error || err.message);
+    } finally {
+      setLinkingLoading(false);
     }
   };
 
@@ -254,17 +419,16 @@ export default function LoginScreen() {
           </View>
         ) : null}
 
-        {/* Phone */}
+        {/* Identifier */}
         <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Phone Number</Text>
+          <Text style={styles.inputLabel}>Email or Phone Number</Text>
           <TextInput
             style={styles.textInput}
-            placeholder="+91 98765 43210"
+            placeholder="example@email.com or +91 98765 43210"
             placeholderTextColor="#94a3b8"
-            value={phone}
-            onChangeText={(t) => { setPhone(t); if (error) setError(null); }}
-            keyboardType="phone-pad"
-            autoComplete="tel"
+            value={identifier}
+            onChangeText={(t) => { setIdentifier(t); if (error) setError(null); }}
+            autoCapitalize="none"
             editable={!loading}
           />
         </View>
@@ -313,6 +477,16 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Google Authentication Button */}
+        <TouchableOpacity
+          style={styles.googleButton}
+          onPress={handleGoogleSignIn}
+          disabled={loading}
+        >
+          <Ionicons name="logo-google" size={18} color="#475569" />
+          <Text style={styles.googleButtonText}>Continue with Google</Text>
+        </TouchableOpacity>
+
         <View style={styles.dividerContainer}>
           <View style={styles.dividerLine} />
           <Text style={styles.dividerText}>or</Text>
@@ -332,6 +506,57 @@ export default function LoginScreen() {
       <Text style={styles.termsText}>
         By signing in, you agree to our Terms of Service and Privacy Policy
       </Text>
+
+      {/* Account Linking Modal */}
+      <Modal
+        visible={linkingInfo !== null}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Link Google Account</Text>
+            <Text style={styles.modalDesc}>
+              An account with the email <Text style={{ fontWeight: 'bold' }}>{linkingInfo?.email}</Text> already exists. Enter your password to securely link this Google account.
+            </Text>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Enter Password</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="••••••••"
+                placeholderTextColor="#94a3b8"
+                value={linkPassword}
+                onChangeText={setLinkPassword}
+                secureTextEntry={true}
+                editable={!linkingLoading}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+              <TouchableOpacity
+                style={[styles.submitButton, { flex: 1, backgroundColor: '#64748b' }]}
+                onPress={() => { setLinkingInfo(null); setLinkPassword(''); }}
+                disabled={linkingLoading}
+              >
+                <Text style={styles.submitButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.submitButton, { flex: 1, backgroundColor: '#2563eb' }]}
+                onPress={handleLinkAccount}
+                disabled={linkingLoading}
+              >
+                {linkingLoading ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Link</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }

@@ -14,6 +14,10 @@ const {
   updateProfile,
   sendEmailVerificationHandler,
   verifyEmailHandler,
+  registerEmail,
+  verifyEmailSignup,
+  googleLoginHandler,
+  linkGoogleHandler,
 } = require("../controllers/auth.controller");
 const { authenticate } = require("../middlewares/auth.middleware");
 
@@ -25,6 +29,10 @@ router.post("/verify-otp", verifyOTP);
 router.post("/set-password", setPassword);
 router.post("/resend-otp", resendOTPHandler);
 router.post("/login", login);
+router.post("/register-email", registerEmail);
+router.post("/verify-email-signup", verifyEmailSignup);
+router.post("/google-login", googleLoginHandler);
+router.post("/link-google", linkGoogleHandler);
 
 // Forgot Password routes
 router.post("/forgot-password", forgotPasswordHandler);

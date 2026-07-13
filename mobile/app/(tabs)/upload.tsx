@@ -326,8 +326,8 @@ export default function UploadScreen() {
         type: file.mimeType || (fileSource === 'document' ? 'application/pdf' : 'image/jpeg'),
       } as any);
       formData.append('language', language);
-      formData.append('userType', userType);
-      formData.append('fileSource', fileSource);
+      formData.append('userType', userType || '');
+      formData.append('fileSource', fileSource || '');
 
       const uploadRes = await api.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

@@ -2,12 +2,14 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
 // For physical device testing on Wi-Fi, use your local machine's IP
-const BASE_URL = 'https://legal-guard-app.onrender.com/api';
+export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://legal-guard-app.onrender.com/api';
 
 export const api = axios.create({
   baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true',
+    'Bypass-Tunnel-Reminder': 'true'
   },
 });
 
@@ -70,8 +72,8 @@ export const resendOTPApi = async (userId: string) => {
   return data;
 };
 
-export const loginUser = async (phone: string, password: string) => {
-  const { data } = await api.post('/auth/login', { phone, password });
+export const loginUser = async (identifier: string, password: string) => {
+  const { data } = await api.post('/auth/login', { identifier, password });
   return data;
 };
 
@@ -97,6 +99,26 @@ export const sendEmailVerificationApi = async () => {
 
 export const verifyEmailApi = async (otp: string) => {
   const { data } = await api.post('/auth/verify-email', { otp });
+  return data;
+};
+
+export const registerEmailApi = async (email: string, password: string, name: string, role: string) => {
+  const { data } = await api.post('/auth/register-email', { email, password, name, role });
+  return data;
+};
+
+export const verifyEmailSignupApi = async (userId: string, otp: string) => {
+  const { data } = await api.post('/auth/verify-email-signup', { userId, otp });
+  return data;
+};
+
+export const googleLoginApi = async (idToken: string) => {
+  const { data } = await api.post('/auth/google-login', { idToken });
+  return data;
+};
+
+export const linkGoogleApi = async (userId: string, password: string, idToken: string) => {
+  const { data } = await api.post('/auth/link-google', { userId, password, idToken });
   return data;
 };
 
@@ -166,5 +188,10 @@ export const getRecommendedProfessionals = async (type: string) => {
 
 export const contactProfessional = async (professionalId: string) => {
   const { data } = await api.post('/professionals/contact', { professionalId });
+  return data;
+};
+
+export const getConversationsApi = async () => {
+  const { data } = await api.get('/livechat/conversations');
   return data;
 };

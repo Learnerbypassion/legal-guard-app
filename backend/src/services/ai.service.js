@@ -1,7 +1,6 @@
 const { getModel } = require("../config/gemini");
-const { ANALYSIS_PROMPT, CHAT_PROMPT } = require("../constants/prompts");
+const { ANALYSIS_PROMPT, ANALYSIS_IMAGE_PROMPT, CHAT_PROMPT } = require("../constants/prompts");
 const { safeParseJSON } = require("../utils/jsonParser");
-const axios = require("axios");
 
 /**
  * Analyzes contract text using Gemini AI
@@ -29,73 +28,62 @@ const analyzeContract = async (contractText, userType = "general", language = "E
 };
 
 /**
- * Analyzes document image using Gemini Vision API
- * Extracts text from the image and analyzes it
- * @param {string} imageUrl - URL of the document image
+ * Analyzes contract image using Gemini Vision API
+ * @param {string} imageUrl - ImageKit URL of the contract image
  * @param {string} userType - freelancer | business | student | general
  * @param {string} language - English | Hindi | Bengali
  * @returns {Promise<object>} structured analysis result
  */
 const analyzeImage = async (imageUrl, userType = "general", language = "English") => {
   try {
+    console.log("📸 Fetching image from URL:", imageUrl);
+    
+    // Fetch the image from the URL
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.statusText}`);
+    }
+
+    // Convert to base64
+    const buffer = await response.buffer ? response.buffer() : Buffer.from(await response.arrayBuffer());
+    const base64Data = buffer.toString("base64");
+
+    console.log("🔄 Converting to base64 (" + base64Data.length + " chars)");
+
     const model = getModel("gemini-3-flash-preview");
+    const promptConfig = ANALYSIS_IMAGE_PROMPT(userType, language);
 
-    // First, extract text from the image using vision
-    const extractionPrompt = `You are a document analysis expert. Analyze the document image and extract all text content. 
-    Please provide the complete, accurately transcribed text from this legal document.
-    Format: Return the extracted text as plain text.`;
+    // Determine mime type based on URL
+    let mimeType = "image/jpeg";
+    if (imageUrl.includes(".png")) mimeType = "image/png";
+    else if (imageUrl.includes(".gif")) mimeType = "image/gif";
+    else if (imageUrl.includes(".webp")) mimeType = "image/webp";
+    else if (imageUrl.includes(".bmp")) mimeType = "image/bmp";
 
-    const visionResponse = await model.generateContent([
-      extractionPrompt,
+    console.log("📤 Sending to Gemini with mimeType:", mimeType);
+
+    const result = await model.generateContent([
+      {
+        text: promptConfig.text,
+      },
       {
         inlineData: {
-          mimeType: "image/jpeg",
-          data: await getImageAsBase64(imageUrl),
+          mimeType: mimeType,
+          data: base64Data, // Send as base64 bytes
         },
       },
     ]);
 
-    const extractedText = visionResponse.response.text().trim();
-
-    if (!extractedText || extractedText.length < 50) {
-      throw new Error("Could not extract meaningful text from the image. Please ensure the image is clear and readable.");
-    }
-
-    // Now analyze the extracted text as if it were a contract
-    const analysisPrompt = ANALYSIS_PROMPT(extractedText, userType, language);
-    const analysisResponse = await model.generateContent(analysisPrompt);
-    const analysisText = analysisResponse.response.text();
-
-    const parsed = safeParseJSON(analysisText);
-    
-    // Include extracted text in the response
-    parsed.extractedText = extractedText;
-    
+    const responseText = result.response.text();
+    console.log("✅ Image analyzed successfully");
+    const parsed = safeParseJSON(responseText);
     return parsed;
   } catch (error) {
+    console.error("❌ Image analysis error:", error.message);
     if (error.message.includes("parse")) {
       throw new Error("AI returned an invalid response. Please try again.");
     }
-    if (error.message.includes("Could not extract")) {
-      throw error;
-    }
     throw new Error(`Image analysis failed: ${error.message}`);
-  }
-};
-
-/**
- * Convert image URL to base64 for Gemini API
- * @param {string} imageUrl - URL of the image
- * @returns {Promise<string>} base64 encoded image
- */
-const getImageAsBase64 = async (imageUrl) => {
-  try {
-    const response = await axios.get(imageUrl, {
-      responseType: 'arraybuffer',
-    });
-    return Buffer.from(response.data, 'binary').toString('base64');
-  } catch (error) {
-    throw new Error(`Failed to fetch image: ${error.message}`);
   }
 };
 

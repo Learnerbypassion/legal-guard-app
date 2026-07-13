@@ -281,107 +281,43 @@ const styles = StyleSheet.create({
 });
 
 export default function SignupScreen() {
-  const [step, setStep] = useState(1); // 1: Register, 2: OTP, 3: Set Password
-  const [userId, setUserId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [role, setRole] = useState<'user' | 'professional'>('user');
-  const [phoneOtp, setPhoneOtp] = useState('');
-  const [emailOtp, setEmailOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState<'user' | 'professional'>('user');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [timer, setTimer] = useState(0);
-  const { register, verifyOTP, setPassword: setPass, resendOTP, error, setError } = useAuth();
+  const { registerEmail, error, setError } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    let interval: any;
-    if (timer > 0) {
-      interval = setInterval(() => setTimer((p) => p - 1), 1000);
+  const handleSignup = async () => {
+    if (!name || !email || !password || !confirmPassword) {
+      setError('Please fill in all fields');
+      return;
     }
-    return () => clearInterval(interval);
-  }, [timer]);
-
-  const normalizePhone = (raw: string) => {
-    let cleaned = raw.replace(/[\s\-()]/g, '');
-    if (/^\d{10}$/.test(cleaned)) {
-      return `+91${cleaned}`;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address');
+      return;
     }
-    let countryCode = '';
-    let numberPart = '';
-    if (cleaned.startsWith('+')) {
-      const m = cleaned.match(/^\+(\d{1,3})(.+)/);
-      if (m) { countryCode = m[1]; numberPart = m[2]; }
-    } else {
-      const m = cleaned.match(/^(\d{1,3})(.+)/);
-      if (m && m[1].length <= 3 && m[2].length >= 7) {
-        countryCode = m[1]; numberPart = m[2];
-      } else {
-        numberPart = cleaned;
-      }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
     }
-    if (!countryCode) countryCode = '91';
-    return `+${countryCode}${numberPart}`;
-  };
-
-  const handleRegister = async () => {
-    if (!name) { setError('Name is required'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email'); return; }
-    if (!/^(\+\d{1,3})?[\d\s\-()]{9,}$/.test(phone)) { setError('Please enter a valid phone number'); return; }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
 
     setLoading(true);
     try {
-      const data = await register(email, normalizePhone(phone), name, role);
-      setUserId(data.userId);
-      setTimer(60);
-      setStep(2);
-    } catch {
-      // handled by context
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOTP = async (skipEmail = false) => {
-    if (!phoneOtp) { setError('Phone OTP is required'); return; }
-    setLoading(true);
-    try {
-      await verifyOTP(userId, phoneOtp, skipEmail ? null : (emailOtp || null));
-      setStep(3);
-    } catch {
-      // handled
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSetPassword = async () => {
-    if (!password) { setError('Please set a password'); return; }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
-    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    setLoading(true);
-    try {
-      await setPass(userId, password);
-      router.replace('/(tabs)');
-    } catch {
-      // handled
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendOTP = async () => {
-    setLoading(true);
-    try {
-      await resendOTP(userId);
-      setTimer(60);
-      setPhoneOtp('');
-      setEmailOtp('');
-    } catch {
-      // handled
+      const data = await registerEmail(email.toLowerCase().trim(), password, name, role);
+      router.push({
+        pathname: '/verify-email-signup',
+        params: { userId: data.userId, email: email.toLowerCase().trim() },
+      });
+    } catch (err: any) {
+      // Handled by context
     } finally {
       setLoading(false);
     }
@@ -402,21 +338,10 @@ export default function SignupScreen() {
         <Text style={styles.appSubtitle}>AI-Powered Document Analysis</Text>
       </View>
 
-      {/* Step Indicator */}
-      <View style={styles.stepIndicator}>
-        {[1, 2, 3].map((s) => (
-          <View
-            key={s}
-            style={[
-              styles.stepDot,
-              s === step ? styles.stepDotActive : s < step ? styles.stepDotCompleted : styles.stepDotInactive,
-            ]}
-          />
-        ))}
-      </View>
-
       {/* Card */}
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Create Account</Text>
+        <Text style={styles.cardSubtitle}>Sign up to get started with document analysis</Text>
 
         {error ? (
           <View style={styles.errorContainer}>
@@ -424,208 +349,108 @@ export default function SignupScreen() {
           </View>
         ) : null}
 
-        {/* ── Step 1: Register ── */}
-        {step === 1 && (
-          <>
-            <Text style={styles.cardTitle}>Create Account</Text>
-            <Text style={styles.cardSubtitle}>Sign up to get started with document analysis</Text>
+        {/* Full Name */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Full Name</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="John Doe"
+            placeholderTextColor="#94a3b8"
+            value={name}
+            onChangeText={(t) => { setName(t); if (error) setError(null); }}
+            editable={!loading}
+          />
+        </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Full Name</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="John Doe"
-                placeholderTextColor="#94a3b8"
-                value={name}
-                onChangeText={(t) => { setName(t); if (error) setError(null); }}
-                editable={!loading}
-              />
-            </View>
+        {/* Email */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Email Address</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="you@example.com"
+            placeholderTextColor="#94a3b8"
+            value={email}
+            onChangeText={(t) => { setEmail(t); if (error) setError(null); }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!loading}
+          />
+        </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="you@example.com"
-                placeholderTextColor="#94a3b8"
-                value={email}
-                onChangeText={(t) => { setEmail(t); if (error) setError(null); }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="+91 98765 43210"
-                placeholderTextColor="#94a3b8"
-                value={phone}
-                onChangeText={(t) => { setPhone(t); if (error) setError(null); }}
-                keyboardType="phone-pad"
-                editable={!loading}
-              />
-              <Text style={styles.helperText}>We'll send you an OTP via SMS</Text>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>I am a</Text>
-              <View style={styles.roleContainer}>
-                {(['user', 'professional'] as const).map((r) => (
-                  <TouchableOpacity
-                    key={r}
-                    onPress={() => setRole(r)}
-                    style={[
-                      styles.roleButton,
-                      role === r ? styles.roleButtonActive : styles.roleButtonInactive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.roleButtonText,
-                        role === r ? styles.roleButtonTextActive : styles.roleButtonTextInactive,
-                      ]}
-                    >
-                      {r}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
+        {/* Password */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.textInput, { paddingRight: 48 }]}
+              placeholder="••••••••"
+              placeholderTextColor="#94a3b8"
+              value={password}
+              onChangeText={(t) => { setPassword(t); if (error) setError(null); }}
+              secureTextEntry={!showPassword}
+              editable={!loading}
+            />
             <TouchableOpacity
-              style={[styles.submitButton, loading ? styles.submitButtonLoading : styles.submitButtonEnabled]}
-              onPress={handleRegister}
-              disabled={loading}
+              style={styles.passwordToggle}
+              onPress={() => setShowPassword(!showPassword)}
             >
-              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.submitButtonText}>Continue</Text>}
+              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748b" />
             </TouchableOpacity>
-          </>
-        )}
+          </View>
+        </View>
 
-        {/* ── Step 2: OTP ── */}
-        {step === 2 && (
-          <>
-            <Text style={styles.cardTitle}>Verify Your Identity</Text>
-            <Text style={styles.cardSubtitle}>Enter the 6-digit codes sent to your phone and email.</Text>
+        {/* Confirm Password */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Confirm Password</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="••••••••"
+            placeholderTextColor="#94a3b8"
+            value={confirmPassword}
+            onChangeText={(t) => { setConfirmPassword(t); if (error) setError(null); }}
+            secureTextEntry={!showPassword}
+            editable={!loading}
+          />
+        </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Phone OTP ({phone})</Text>
-              <TextInput
-                style={styles.otpInput}
-                placeholder="000000"
-                placeholderTextColor="#94a3b8"
-                value={phoneOtp}
-                onChangeText={setPhoneOtp}
-                maxLength={6}
-                keyboardType="number-pad"
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>
-                Email OTP ({email}) <Text style={{ color: '#94a3b8', fontWeight: 'normal' }}>(Optional)</Text>
-              </Text>
-              <TextInput
-                style={styles.otpInput}
-                placeholder="000000"
-                placeholderTextColor="#94a3b8"
-                value={emailOtp}
-                onChangeText={setEmailOtp}
-                maxLength={6}
-                keyboardType="number-pad"
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.buttonContainer}>
+        {/* Role Selector */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>I am a</Text>
+          <View style={styles.roleContainer}>
+            {(['user', 'professional'] as const).map((r) => (
               <TouchableOpacity
-                style={[styles.submitButton, loading ? styles.submitButtonLoading : styles.submitButtonEnabled]}
-                onPress={() => handleVerifyOTP(false)}
-                disabled={loading}
+                key={r}
+                onPress={() => setRole(r)}
+                style={[
+                  styles.roleButton,
+                  role === r ? styles.roleButtonActive : styles.roleButtonInactive,
+                ]}
               >
-                {loading ? <ActivityIndicator color="white" /> : <Text style={styles.submitButtonText}>Verify Codes</Text>}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => handleVerifyOTP(true)}
-                disabled={loading}
-              >
-                <Text style={styles.secondaryButtonText}>Verify Phone & Skip Email for Now</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.timerContainer}>
-              {timer > 0 ? (
-                <Text style={styles.timerText}>
-                  Resend code in <Text style={styles.timerHighlight}>{timer}s</Text>
+                <Text
+                  style={[
+                    styles.roleButtonText,
+                    role === r ? styles.roleButtonTextActive : styles.roleButtonTextInactive,
+                  ]}
+                >
+                  {r}
                 </Text>
-              ) : (
-                <TouchableOpacity onPress={handleResendOTP} disabled={loading}>
-                  <Text style={styles.resendLink}>Didn't receive the codes? Resend</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => { setStep(1); setError(null); setPhoneOtp(''); setEmailOtp(''); }}
-            >
-              <Text style={styles.backButtonText}>Back</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* ── Step 3: Set Password ── */}
-        {step === 3 && (
-          <>
-            <Text style={styles.cardTitle}>Secure Your Account</Text>
-            <Text style={styles.cardSubtitle}>Create a strong password for your account</Text>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={[styles.textInput, { paddingRight: 48 }]}
-                  placeholder="Min 8 characters"
-                  placeholderTextColor="#94a3b8"
-                  value={password}
-                  onChangeText={(t) => { setPassword(t); if (error) setError(null); }}
-                  secureTextEntry={!showPassword}
-                  editable={!loading}
-                />
-                 <TouchableOpacity style={styles.passwordToggle} onPress={() => setShowPassword(!showPassword)}>
-                   <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748b" />
-                 </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Confirm Password</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Confirm password"
-                placeholderTextColor="#94a3b8"
-                value={confirmPassword}
-                onChangeText={(t) => { setConfirmPassword(t); if (error) setError(null); }}
-                secureTextEntry={!showPassword}
-                editable={!loading}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.submitButton, loading ? styles.submitButtonLoading : styles.submitButtonEnabled]}
-              onPress={handleSetPassword}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.submitButtonText}>Complete Setup</Text>}
-            </TouchableOpacity>
-          </>
-        )}
+        {/* Submit */}
+        <TouchableOpacity
+          style={[styles.submitButton, loading ? styles.submitButtonLoading : styles.submitButtonEnabled]}
+          onPress={handleSignup}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.submitButtonText}>Sign Up</Text>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.dividerContainer}>
           <View style={styles.dividerLine} />

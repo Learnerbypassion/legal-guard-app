@@ -10,13 +10,33 @@ const uploadRoutes = require("./routes/upload.routes");
 const aiRoutes = require("./routes/ai.routes");
 const chatRoutes = require("./routes/chat.routes");
 const professionalRoutes = require("./routes/professional.routes");
+const livechatRoutes = require("./routes/livechat.routes");
 
 const app = express();
 
-// Middlewares
+const allowedOrigins = [
+  FRONTEND_URL,
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://legal-gurdian.netlify.app"
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        process.env.NODE_ENV !== "production" ||
+        allowedOrigins.indexOf(origin) !== -1 ||
+        origin.startsWith("http://localhost:") ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin.startsWith("http://10.0.2.2:") ||
+        origin.startsWith("http://192.168.")
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
@@ -36,6 +56,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/professionals", professionalRoutes);
+app.use("/api/livechat", livechatRoutes);
 
 // 404
 app.use((req, res) => {

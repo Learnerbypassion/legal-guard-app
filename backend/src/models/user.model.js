@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true },
-    phone: { type: String, required: true, unique: true },
+    phone: { type: String, unique: true, sparse: true },
     name: { type: String, required: true },
     password: { type: String },
     userType: {
@@ -21,6 +21,9 @@ const userSchema = new mongoose.Schema(
       experience: { type: String },
       credentials: { type: String },
       profession: { type: String, enum: ["Lawyer", "CA"] },
+      specialization: { type: String },
+      languages: [{ type: String }],
+      rating: { type: Number, default: 5.0 },
     },
     preferredLanguage: {
       type: String,
@@ -36,6 +39,10 @@ const userSchema = new mongoose.Schema(
     resetOTP: { type: String },
     resetOTPExpires: { type: Date },
     documents: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }],
+    authProviders: [{ type: String, default: ["local"] }],
+    googleSub: { type: String, unique: true, sparse: true },
+    profilePicture: { type: String, default: null },
+    lastLoginAt: { type: Date },
   },
   { timestamps: true }
 );

@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { getRecommendedProfessionals, contactProfessional } from '../src/services/api';
+import { getRecommendedProfessionals, contactProfessional } from '../src/services/professional.service';
 import { useAuth } from '../src/context/AuthContext';
 import { GlobalDataStore } from '../src/services/dataStore';
+import { useAnalysisSpeech } from '../src/hooks/useAnalysisSpeech';
 
 type Tab = 'summary' | 'advantages' | 'concerns' | 'clauses' | 'professionals';
 
@@ -377,6 +378,107 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '700',
   },
+  speakCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+  },
+  speakHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  speakTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  playingBadge: {
+    backgroundColor: '#dbeafe',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  playingBadgeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#2563eb',
+  },
+  speakingText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 10,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  speakControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  speakButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#2563eb',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  stopButton: {
+    backgroundColor: '#dc2626',
+  },
+  speakButtonText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  speedSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  speedLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  speedButtons: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    padding: 2,
+  },
+  speedBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  speedBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  speedBtnText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  speedBtnTextActive: {
+    color: '#0f172a',
+  },
 });
 
 export default function ResultScreen() {
@@ -392,9 +494,40 @@ export default function ResultScreen() {
   const [text, setText] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
+  const speechLang = (analysis?.language === 'Hindi' || analysis?.language === 'Bengali') ? analysis.language : 'English';
+  const { speakingState, currentSection, speak, stop, speed, setSpeed } = useAnalysisSpeech(speechLang);
+
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleChatNow = (prof: any) => {
+    if (!user) {
+      Alert.alert(
+        'Authentication Required',
+        'Please sign in to chat with a professional.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In',
+            onPress: () => {
+              router.push({
+                pathname: '/(auth)/login',
+                params: {
+                  redirectTo: `/professional-chat/${prof._id}`,
+                },
+              });
+            },
+          },
+        ]
+      );
+      return;
+    }
+    
+    router.push({
+      pathname: `/professional-chat/${prof._id}` as any,
+    });
+  };
 
   const loadData = async () => {
     try {
@@ -464,7 +597,7 @@ export default function ResultScreen() {
 
   const riskScore = analysis.riskScore?.score ?? (typeof analysis.riskScore === 'number' ? analysis.riskScore : 0);
   const riskLabel = analysis.riskScore?.label || '';
-  const riskColor = { Critical: '#dc2626', High: '#ea580c', Medium: '#ca8a04', Low: '#16a34a' }[riskLabel] || '#64748b';
+  const riskColor = ({ Critical: '#dc2626', High: '#ea580c', Medium: '#ca8a04', Low: '#16a34a' } as Record<string, string>)[riskLabel] || '#64748b';
 
   const TABS: { id: Tab; label: string; icon: any }[] = [
     { id: 'summary', label: 'Summary', icon: 'list-outline' },
@@ -546,6 +679,64 @@ export default function ResultScreen() {
             </View>
           ) : null}
         </View>
+
+        {/* Speak Out Loud Section */}
+        {analysis ? (
+          <View style={styles.speakCard}>
+            <View style={styles.speakHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons 
+                  name={speakingState === 'playing' ? 'volume-high' : 'volume-mute-outline'} 
+                  size={20} 
+                  color="#2563eb" 
+                />
+                <Text style={styles.speakTitle}>Listen to Analysis</Text>
+              </View>
+              {speakingState === 'playing' && (
+                <View style={styles.playingBadge}>
+                  <Text style={styles.playingBadgeText}>Reading...</Text>
+                </View>
+              )}
+            </View>
+
+            {speakingState === 'playing' && currentSection ? (
+              <Text style={styles.speakingText} numberOfLines={1}>
+                Reading: <Text style={{ fontWeight: '700', color: '#1e293b' }}>{currentSection}</Text>
+              </Text>
+            ) : null}
+
+            <View style={styles.speakControls}>
+              {speakingState === 'playing' ? (
+                <TouchableOpacity style={[styles.speakButton, styles.stopButton]} onPress={stop}>
+                  <Ionicons name="square" size={14} color="#ffffff" />
+                  <Text style={styles.speakButtonText}>Stop</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.speakButton} onPress={() => speak(analysis)}>
+                  <Ionicons name="play" size={14} color="#ffffff" />
+                  <Text style={styles.speakButtonText}>Listen</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.speedSelector}>
+                <Text style={styles.speedLabel}>Speed:</Text>
+                <View style={styles.speedButtons}>
+                  {[0.75, 1.0, 1.25, 1.5].map((val) => (
+                    <TouchableOpacity
+                      key={val}
+                      style={[styles.speedBtn, speed === val && styles.speedBtnActive]}
+                      onPress={() => setSpeed(val)}
+                    >
+                      <Text style={[styles.speedBtnText, speed === val && styles.speedBtnTextActive]}>
+                        {val}x
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {/* Tab Bar */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
@@ -665,40 +856,101 @@ export default function ResultScreen() {
           {/* Professionals */}
           {activeTab === 'professionals' && (
             <View>
-              <Text style={styles.contentTitle}>Recommended Professionals</Text>
+              <Text style={styles.contentTitle}>Recommended Experts</Text>
               <Text style={styles.contentSubtitle}>Based on anomalies detected in this document.</Text>
               {loadingProfs ? (
                 <ActivityIndicator color="#2563eb" />
               ) : professionals.length > 0 ? (
                 professionals.map((prof: any) => (
                   <View key={prof._id} style={styles.profCard}>
-                    <Text style={styles.profName}>{prof.name}</Text>
-                    <Text style={styles.profProfession}>{prof.professionalDetails?.profession}</Text>
+                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                      <View style={{ position: 'relative' }}>
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#1b2f4e', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ color: '#ffffff', fontWeight: 'bold', fontSize: 16 }}>
+                            {prof.name?.charAt(0)?.toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          right: 0,
+                          width: 12,
+                          height: 12,
+                          borderRadius: 6,
+                          borderWidth: 2,
+                          borderColor: '#ffffff',
+                          backgroundColor: prof.isOnline ? '#22c55e' : '#94a3b8'
+                        }} />
+                      </View>
+                      
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.profName}>{prof.name}</Text>
+                        <Text style={styles.profProfession}>
+                          {prof.professionalDetails?.profession} • {prof.isOnline ? 'Online' : 'Offline'}
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fef08a', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                        <Ionicons name="star" size={12} color="#ca8a04" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#854d0e' }}>
+                          {prof.professionalDetails?.rating || '5.0'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {prof.professionalDetails?.specialization && (
+                      <Text style={styles.profInfo}>
+                        <Text style={{ fontWeight: '600' }}>Specialization:</Text> {prof.professionalDetails.specialization}
+                      </Text>
+                    )}
                     {prof.professionalDetails?.education && (
-                      <Text style={styles.profInfo}><Text style={{ fontWeight: '600' }}>Education:</Text> {prof.professionalDetails.education}</Text>
+                      <Text style={styles.profInfo}>
+                        <Text style={{ fontWeight: '600' }}>Education:</Text> {prof.professionalDetails.education}
+                      </Text>
                     )}
                     {prof.professionalDetails?.experience && (
-                      <Text style={styles.profInfo}><Text style={{ fontWeight: '600' }}>Experience:</Text> {prof.professionalDetails.experience}</Text>
-                    )}
-                    <TouchableOpacity
-                      onPress={() => handleContact(prof._id)}
-                      disabled={contactedIds[prof._id] === 'Sent ✓' || contactedIds[prof._id] === 'Sending...'}
-                      style={[
-                        styles.profContactButton,
-                        contactedIds[prof._id] === 'Sent ✓' ? styles.profContactButtonSuccess :
-                        contactedIds[prof._id] === 'Sending...' ? styles.profContactButtonLoading :
-                        styles.profContactButtonActive,
-                      ]}
-                    >
-                      <Text style={[
-                        styles.profContactText,
-                        contactedIds[prof._id] === 'Sent ✓' ? styles.profContactTextSuccess :
-                        contactedIds[prof._id] === 'Sending...' ? styles.profContactTextLoading :
-                        styles.profContactTextActive,
-                      ]}>
-                        {contactedIds[prof._id] || 'Send Email'}
+                      <Text style={styles.profInfo}>
+                        <Text style={{ fontWeight: '600' }}>Experience:</Text> {prof.professionalDetails.experience}
                       </Text>
-                    </TouchableOpacity>
+                    )}
+                    {prof.professionalDetails?.languages && prof.professionalDetails.languages.length > 0 && (
+                      <Text style={styles.profInfo}>
+                        <Text style={{ fontWeight: '600' }}>Languages:</Text> {prof.professionalDetails.languages.join(', ')}
+                      </Text>
+                    )}
+
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                      <TouchableOpacity
+                        onPress={() => handleContact(prof._id)}
+                        disabled={contactedIds[prof._id] === 'Sent ✓' || contactedIds[prof._id] === 'Sending...'}
+                        style={[
+                          styles.profContactButton,
+                          { flex: 1, marginTop: 0 },
+                          contactedIds[prof._id] === 'Sent ✓' ? styles.profContactButtonSuccess :
+                          contactedIds[prof._id] === 'Sending...' ? styles.profContactButtonLoading :
+                          styles.profContactButtonActive,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.profContactText,
+                          contactedIds[prof._id] === 'Sent ✓' ? styles.profContactTextSuccess :
+                          contactedIds[prof._id] === 'Sending...' ? styles.profContactTextLoading :
+                          styles.profContactTextActive,
+                        ]}>
+                          {contactedIds[prof._id] || 'Send Email'}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={() => handleChatNow(prof)}
+                        style={[styles.profContactButton, styles.profContactButtonActive, { flex: 1, marginTop: 0, backgroundColor: '#1b2f4e', flexDirection: 'row', gap: 4, justifyContent: 'center' }]}
+                      >
+                        <Ionicons name="chatbubble-ellipses-outline" size={14} color="#ffffff" />
+                        <Text style={[styles.profContactText, styles.profContactTextActive]}>
+                          Chat Now
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               ) : (

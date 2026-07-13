@@ -12,54 +12,72 @@ oAuth2Client.setCredentials({
   refresh_token: process.env.REFRESH_TOKEN,
 });
 
-const sendEmail = async ({ to, subject, html, attachment = null }) => {
+const sendEmail = async ({ to, subject, html }) => {
   const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
-  let messageParts = [
+  const messageParts = [
+    `From: "Legal Guardian" <${process.env.EMAIL_USER}>`,
+    `To: ${to}`,
+    "Content-Type: text/html; charset=utf-8",
+    "MIME-Version: 1.0",
+    `Subject: ${subject}`,
+    "",
+    html,
+  ];
+
+  const message = messageParts.join("\n");
+
+  const encodedMessage = Buffer.from(message)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  await gmail.users.messages.send({
+    userId: "me",
+    requestBody: {
+      raw: encodedMessage,
+    },
+  });
+};
+
+/**
+ * Send email with PDF attachment
+ * @param {string} to - Recipient email
+ * @param {string} subject - Email subject
+ * @param {string} html - Email body in HTML
+ * @param {Buffer} pdfBuffer - PDF file buffer
+ * @param {string} filename - PDF filename
+ */
+const sendEmailWithAttachment = async ({ to, subject, html, pdfBuffer, filename }) => {
+  const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+
+  const boundary = "boundary_" + Math.random().toString(36).substr(2, 9);
+
+  const messageParts = [
     `From: "Legal Guardian" <${process.env.EMAIL_USER}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: quoted-printable",
+    "",
+    html,
+    "",
+    `--${boundary}`,
+    `Content-Type: application/pdf; name="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${filename}"`,
+    "",
+    pdfBuffer.toString("base64"),
+    "",
+    `--${boundary}--`,
   ];
 
-  let message;
-
-  if (attachment) {
-    // Create multipart MIME message with attachment
-    const boundary = "boundary_" + Date.now();
-
-    messageParts.push("MIME-Version: 1.0");
-    messageParts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-    messageParts.push("");
-    messageParts.push(`--${boundary}`);
-    messageParts.push("Content-Type: text/html; charset=utf-8");
-    messageParts.push("Content-Transfer-Encoding: 7bit");
-    messageParts.push("");
-    messageParts.push(html);
-    messageParts.push("");
-    messageParts.push(`--${boundary}`);
-    messageParts.push(`Content-Type: application/pdf; name="${attachment.filename}"`);
-    messageParts.push("Content-Transfer-Encoding: base64");
-    messageParts.push(`Content-Disposition: attachment; filename="${attachment.filename}"`);
-    messageParts.push("");
-    
-    // Add the base64 encoded PDF
-    const base64Pdf = attachment.buffer.toString("base64");
-    // Add line breaks every 76 characters (RFC 2045)
-    const wrappedPdf = base64Pdf.match(/.{1,76}/g).join("\n");
-    messageParts.push(wrappedPdf);
-    messageParts.push("");
-    messageParts.push(`--${boundary}--`);
-
-    message = messageParts.join("\r\n");
-  } else {
-    // Simple message without attachment
-    messageParts.push("Content-Type: text/html; charset=utf-8");
-    messageParts.push("MIME-Version: 1.0");
-    messageParts.push("");
-    messageParts.push(html);
-
-    message = messageParts.join("\n");
-  }
+  const message = messageParts.join("\n");
 
   const encodedMessage = Buffer.from(message)
     .toString("base64")
@@ -198,16 +216,9 @@ async function sendLoginEmail(userEmail, userName) {
   await sendEmail({ to: userEmail, subject, html });
 }
 
-// 📩 CONTACT PROFESSIONAL EMAIL
-async function sendProfessionalContactEmail(
-  professionalEmail,
-  professionalName,
-  userEmail,
-  userName,
-  pdfBuffer = null,
-  pdfFileName = "document.pdf"
-) {
-  const subject = "New Client Inquiry via Legal Guardian";
+// 📩 CONTACT PROFESSIONAL EMAIL WITH PDF
+async function sendProfessionalContactEmail(professionalEmail, professionalName, userEmail, userName, pdfBuffer, fileName) {
+  const subject = "New Client Inquiry via Legal Guardian - Document Attached";
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;padding:30px;background:#f4f6f8;">
@@ -219,15 +230,23 @@ async function sendProfessionalContactEmail(
         A user has requested to contact you for professional advice through the Legal Guardian platform.
       </p>
 
-      <div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;">
+      <div style="margin:20px 0;padding:15px;background:#f3f4f6;border-radius:8px;border-left:4px solid #1B2F4E;">
+        <strong style="display:block;margin-bottom:8px;">📋 Client Details:</strong>
         <strong>User Name:</strong> ${userName}<br/>
         <strong>User Email:</strong> ${userEmail}
       </div>
 
-      ${pdfBuffer ? `<p style="color:#374151;"><strong>📎 Document Attached:</strong> ${pdfFileName}</p>` : ""}
+      ${pdfBuffer && fileName ? `
+      <div style="margin:20px 0;padding:15px;background:#fffbeb;border-radius:8px;border-left:4px solid #f59e0b;">
+        <strong style="color:#b45309;">📄 Document Attached:</strong>
+        <p style="margin:8px 0 0 0;color:#92400e;">
+          The client's document "<strong>${fileName}</strong>" is attached to this email for your review and analysis.
+        </p>
+      </div>
+      ` : ''}
 
       <p style="color:#6b7280;font-size:14px;">
-        Please reach out to them directly via the provided email address to assist them.
+        Please review the attached document and reach out to the client directly via the provided email address to assist them.
       </p>
 
       <p style="margin-top:20px;color:#6b7280;font-size:14px;">
@@ -239,14 +258,18 @@ async function sendProfessionalContactEmail(
   </div>
   `;
 
-  const attachmentData = pdfBuffer
-    ? {
-        buffer: pdfBuffer,
-        filename: pdfFileName,
-      }
-    : null;
-
-  await sendEmail({ to: professionalEmail, subject, html, attachment: attachmentData });
+  // Send with attachment if PDF is provided, otherwise send regular email
+  if (pdfBuffer && fileName) {
+    await sendEmailWithAttachment({
+      to: professionalEmail,
+      subject,
+      html,
+      pdfBuffer,
+      filename: fileName,
+    });
+  } else {
+    await sendEmail({ to: professionalEmail, subject, html });
+  }
 }
 
 module.exports = {
@@ -255,4 +278,5 @@ module.exports = {
   sendOtpEmail,
   sendPasswordResetEmail,
   sendProfessionalContactEmail,
+  sendEmailWithAttachment,
 };
